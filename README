@@ -1,0 +1,12 @@
+gameboy emulator in rust
+
+I don't actually know rust (that's the point of this project)
+
+nothing works yet
+
+useful links:
+* http://bgb.bircd.org/pandocs.htm
+* http://marc.rawer.de/Gameboy/Docs/GBCPUman.pdf
+* http://www.pastraiser.com/cpu/gameboy/gameboy_opcodes.html
+
+and sources of other existing emulators and tools

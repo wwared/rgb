@@ -1,0 +1,6 @@
+[package]
+name = "rgb"
+version = "0.1.0"
+authors = ["wwared <wwared@users.noreply.github.com>"]
+
+[dependencies]
