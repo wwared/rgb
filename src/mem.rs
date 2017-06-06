@@ -5,17 +5,17 @@ pub struct Memory {
 }
 
 
-pub fn new() -> Memory {
-  return Memory {
+pub fn new() -> Box<Memory> {
+  return Box::new(Memory {
     mem: [0; MEM_TOP],
-  };
+  });
 }
 
 impl Memory {
   pub fn get(&self, pos: u16) -> u8 {
     return self.mem[pos as usize];
   }
-  
+
   pub fn set(&mut self, pos: u16, val: u8) {
     self.mem[pos as usize] = val;
   }

@@ -4,9 +4,22 @@ I don't actually know rust (that's the point of this project)
 
 nothing works yet
 
-useful links:
+useful links (no particular order):
 * http://bgb.bircd.org/pandocs.htm
 * http://marc.rawer.de/Gameboy/Docs/GBCPUman.pdf
 * http://www.pastraiser.com/cpu/gameboy/gameboy_opcodes.html
+* http://imrannazar.com/GameBoy-Emulation-in-JavaScript:-The-CPU
+* https://realboyemulator.wordpress.com/2013/01/03/a-look-at-the-game-boy-bootstrap-let-the-fun-begin/
+* https://realboyemulator.wordpress.com/2013/01/01/the-nintendo-game-boy-1/
+* http://gameboy.mongenel.com/dmg/asmmemmap.html
+* http://www.devrs.com/gb/
+* http://www.devrs.com/gb/files/opcodes.html
+* http://www.devrs.com/gb/files/gbspec.txt
+* http://verhoeven272.nl/cgi-bin/FS?fruttenboel%2FGameboy&Gameboy+section&GBtop&GBsummary&GBcontent
+* http://meatfighter.com/gameboy/GBCribSheet000129.pdf
+* http://meatfighter.com/gameboy/TheNintendoGameboy.pdf
+* http://gbdev.gg8.se/wiki/articles/Main_Page
+* http://gbdev.gg8.se/wiki/articles/Pan_Docs
+* http://gbdev.gg8.se/wiki/articles/The_Cartridge_Header
 
 and sources of other existing emulators and tools
