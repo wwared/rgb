@@ -459,11 +459,49 @@ impl CPU {
       0xFF => Restart(0x38),
 
       0xCB => {
-        let next_opcode = self.opcode_u8();
-        match next_opcode {
-          // TODO: complete 0xCB table
+        let opcode2 = self.opcode_u8();
+        match opcode2 {
+          0x00 ... 0x07 => Rlc(reg8[(opcode2 & 0x0f) as usize]),
+          0x08 ... 0x0F => Rrc(reg8[(opcode2 & 0x0f - 8) as usize]),
+
+          0x10 ... 0x17 => Rl(reg8[(opcode2 & 0x0f) as usize]),
+          0x18 ... 0x1F => Rr(reg8[(opcode2 & 0x0f - 8) as usize]),
+
+          0x20 ... 0x27 => Sla(reg8[(opcode2 & 0x0f) as usize]),
+          0x28 ... 0x2F => Sra(reg8[(opcode2 & 0x0f - 8) as usize]),
+
+          0x30 ... 0x37 => Swap(reg8[(opcode2 & 0x0f) as usize]),
+          0x38 ... 0x3F => Srl(reg8[(opcode2 & 0x0f - 8) as usize]),
+
+          0x40 ... 0x47 => TestBit(0, reg8[(opcode2 & 0x0f) as usize]),
+          0x48 ... 0x4F => TestBit(1, reg8[(opcode2 & 0x0f - 8) as usize]),
+          0x50 ... 0x57 => TestBit(2, reg8[(opcode2 & 0x0f) as usize]),
+          0x58 ... 0x5F => TestBit(3, reg8[(opcode2 & 0x0f - 8) as usize]),
+          0x60 ... 0x67 => TestBit(4, reg8[(opcode2 & 0x0f) as usize]),
+          0x68 ... 0x6F => TestBit(5, reg8[(opcode2 & 0x0f - 8) as usize]),
+          0x70 ... 0x77 => TestBit(6, reg8[(opcode2 & 0x0f) as usize]),
+          0x78 ... 0x7F => TestBit(7, reg8[(opcode2 & 0x0f - 8) as usize]),
+
+          0x80 ... 0x87 => SetBit(0, reg8[(opcode2 & 0x0f) as usize], false),
+          0x88 ... 0x8F => SetBit(1, reg8[(opcode2 & 0x0f - 8) as usize], false),
+          0x90 ... 0x97 => SetBit(2, reg8[(opcode2 & 0x0f) as usize], false),
+          0x98 ... 0x9F => SetBit(3, reg8[(opcode2 & 0x0f - 8) as usize], false),
+          0xA0 ... 0xA7 => SetBit(4, reg8[(opcode2 & 0x0f) as usize], false),
+          0xA8 ... 0xAF => SetBit(5, reg8[(opcode2 & 0x0f - 8) as usize], false),
+          0xB0 ... 0xB7 => SetBit(6, reg8[(opcode2 & 0x0f) as usize], false),
+          0xB8 ... 0xBF => SetBit(7, reg8[(opcode2 & 0x0f - 8) as usize], false),
+
+          0xC0 ... 0xC7 => SetBit(0, reg8[(opcode2 & 0x0f) as usize], true),
+          0xC8 ... 0xCF => SetBit(1, reg8[(opcode2 & 0x0f - 8) as usize], true),
+          0xD0 ... 0xD7 => SetBit(2, reg8[(opcode2 & 0x0f) as usize], true),
+          0xD8 ... 0xDF => SetBit(3, reg8[(opcode2 & 0x0f - 8) as usize], true),
+          0xE0 ... 0xE7 => SetBit(4, reg8[(opcode2 & 0x0f) as usize], true),
+          0xE8 ... 0xEF => SetBit(5, reg8[(opcode2 & 0x0f - 8) as usize], true),
+          0xF0 ... 0xF7 => SetBit(6, reg8[(opcode2 & 0x0f) as usize], true),
+          0xF8 ... 0xFF => SetBit(7, reg8[(opcode2 & 0x0f - 8) as usize], true),
+
           _ => {
-            panic!("Unhandled 0xCB opcode {:?}", next_opcode);
+            panic!("Unhandled 0xCB opcode {:?}", opcode2);
           }
         }
       },
