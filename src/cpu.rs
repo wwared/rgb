@@ -144,13 +144,15 @@ pub enum Instruction {
   SetCarryFlag(),
 
   Restart(u8),
+
+  UnknownOpcode(),
 }
 
 use self::Instruction::*;
 
 impl Instruction {
-  fn size(i: Instruction) -> u16 {
-    match i {
+  fn size(&self) -> u16 {
+    match *self {
       WriteMemSP(_) | Jp(_) | JpFlag(_, _, _) |
         Call(_) | CallFlag(_, _, _) | ReadAImm16(_) |
         WriteAImm16(_) | LoadImm16(_, _) => 3,
@@ -326,13 +328,12 @@ impl CPU {
     self.read16(self.regs.pc+1)
   }
 
-  fn decode_next(&mut self) -> Instruction {
+  pub fn decode_next(&mut self) -> Instruction {
     let opcode = self.read8(self.regs.pc);
 
     let reg8: [Reg8; 8] = [Reg8::B, Reg8::C, Reg8::D, Reg8::E, Reg8::H, Reg8::L, Reg8::MemHL, Reg8::A];
     let reg16: [Reg16; 4] = [Reg16::BC, Reg16::DE, Reg16::HL, Reg16::SP];
 
-    // TODO: complete
     match opcode {
       0x00 => Nop(),
       0x10 => Stop(),
@@ -400,18 +401,20 @@ impl CPU {
       0x01 | 0x11 | 0x21 | 0x31 => LoadImm16(reg16[((opcode & 0xf0) >> 4) as usize], self.opcode_u16()),
 
       0x0A | 0x1A => ReadA(reg16[((opcode & 0xf0) >> 4) as usize], InstrFlag::None),
-      0x2A => ReadA(Reg16::HL, InstrFlag::Inc), 
-      0x3A => ReadA(Reg16::HL, InstrFlag::Dec), 
+      0x2A => ReadA(Reg16::HL, InstrFlag::Inc),
+      0x3A => ReadA(Reg16::HL, InstrFlag::Dec),
 
       0x02 | 0x12 => WriteA(reg16[((opcode & 0xf0) >> 4) as usize], InstrFlag::None),
-      0x22 => WriteA(Reg16::HL, InstrFlag::Inc), 
-      0x32 => WriteA(Reg16::HL, InstrFlag::Dec), 
+      0x22 => WriteA(Reg16::HL, InstrFlag::Inc),
+      0x32 => WriteA(Reg16::HL, InstrFlag::Dec),
 
       0xEA => WriteAImm16(self.opcode_u16()),
       0xFA => ReadAImm16(self.opcode_u16()),
 
-      0xC1 | 0xD1 | 0xE1 | 0xF1 => Pop(reg16[(((opcode & 0xf0) >> 4) - 12) as usize]),
-      0xC5 | 0xD5 | 0xE5 | 0xF5 => Push(reg16[(((opcode & 0xf0) >> 4) - 12) as usize]),
+      0xC1 | 0xD1 | 0xE1 => Pop(reg16[(((opcode & 0xf0) >> 4) - 12) as usize]),
+      0xF1 => Pop(Reg16::AF),
+      0xC5 | 0xD5 | 0xE5 => Push(reg16[(((opcode & 0xf0) >> 4) - 12) as usize]),
+      0xF5 => Push(Reg16::AF),
 
       0x40 ... 0x47 => LoadReg8(Reg8::B, reg8[(opcode & 0x0f) as usize]),
       0x48 ... 0x4F => LoadReg8(Reg8::C, reg8[(opcode & 0x0f - 8) as usize]),
@@ -501,24 +504,160 @@ impl CPU {
           0xF8 ... 0xFF => SetBit(7, reg8[(opcode2 & 0x0f - 8) as usize], true),
 
           _ => {
-            panic!("Unhandled 0xCB opcode {:?}", opcode2);
+            // Should never happen (0..FF are all covered above)
+            panic!("Unhandled opcode 0xCB 0x{:X}", opcode2);
           }
         }
       },
-      
+
       _ => {
-        panic!("Unknown opcode {:?}", opcode);
+        println!("Unknown opcode 0x{:X} at 0x{:X}", opcode, self.regs.pc);
+        UnknownOpcode()
       },
     }
   }
 
-  fn run(&mut self, instr: Instruction) -> usize {
-    5
+  pub fn duration(&self, instr: Instruction, jumped: bool) -> usize {
+   match instr {
+      JrFlag(_, _, _) => { if jumped { 12 } else { 8 } },
+      JpFlag(_, _, _) => { if jumped { 16 } else { 12 } },
+      RetFlag(_, _) => { if jumped { 20 } else { 8 } },
+      CallFlag(_, _, _) => { if jumped { 24 } else { 12 } },
+      HiLoad(_) | HiWrite(_) | LoadImm16(_, _) | Pop(_) |
+        IncReg8(Reg8::MemHL) | DecReg8(Reg8::MemHL) |
+        LoadImm8(Reg8::MemHL, _) | Jr(_) | LoadSPOffset(_) => 12,
+      LoadReg8(Reg8::MemHL, _) | LoadReg8(_, Reg8::MemHL) | WriteA(_, _) |
+        AddReg8(Reg8::MemHL) | SubReg8(Reg8::MemHL) | AndReg8(Reg8::MemHL) |
+        OrReg8(Reg8::MemHL) | AddCarryReg8(Reg8::MemHL) |
+        SubCarryReg8(Reg8::MemHL) | XorReg8(Reg8::MemHL) |
+        Compare(Reg8::MemHL) | AddCarryImm8(_) | SubCarryImm8(_) |
+        XorImm8(_) | CompareImm8(_) | AddImm8(_) | SubImm8(_) |
+        AndImm8(_) | OrImm8(_) | HiWriteReg() | HiLoadReg() | IncReg16(_) |
+        LoadImm8(_, _) | AddHL(_) | SwapSPHL() | ReadA(_, _) | DecReg16(_) => 8,
+      Jp(_) | Push(_) | Restart(_) | AddSP(_) | Ret() | RetInterrupt() |
+        WriteAImm16(_) | ReadAImm16(_) => 16,
+      WriteMemSP(_) => 20,
+      Call(_) => 24,
+      // 0xCB prefixed opcodes
+      Rlc(Reg8::MemHL) | Rrc(Reg8::MemHL) | Rl(Reg8::MemHL) | Rr(Reg8::MemHL) |
+        Sla(Reg8::MemHL) | Sra(Reg8::MemHL) | Swap(Reg8::MemHL) |
+        Srl(Reg8::MemHL) | TestBit(_, Reg8::MemHL) | SetBit(_, Reg8::MemHL, _) => 16,
+      Rlc(_) | Rrc(_) | Rl(_) | Rr(_) | Sla(_) | Sra(_) |
+        Swap(_) | Srl(_) | TestBit(_, _) | SetBit(_, _, _) => 8,
+      _ => 4,
+    }
   }
 
   //
   // Opcode implementations follow
   //
+
+  fn run(&mut self, instr: Instruction) -> usize {
+    let mut jumped = false;
+    match instr {
+      Nop() => (),
+      Stop() => { /* TODO */ },
+      Halt() => { /* TODO */ },
+
+      DisableInterrupts() => { /* TODO */ },
+      EnableInterrupts() => { /* TODO */ },
+
+      Jr(i) => { /* TODO */
+        let d = i.abs() as u16;
+        if i < 0 {
+          self.regs.pc = self.regs.pc.wrapping_sub(d);
+        } else {
+          self.regs.pc = self.regs.pc.wrapping_add(d);
+        }
+        jumped = true;
+      },
+      JrFlag(i, f, v) => { /* TODO */ },
+      Jp(n) => { /* TODO */
+        self.regs.pc = n;
+        jumped = true;
+      },
+      JpHL() => { /* TODO */ },
+      JpFlag(n, f, v) => { /* TODO */ },
+      Call(a) => { /* TODO */ },
+      CallFlag(a, f, v) => { /* TODO */ },
+      Ret() => { /* TODO */ },
+      RetInterrupt() => { /* TODO */ },
+      RetFlag(f, v) => { /* TODO */ },
+
+      AddReg8(r) => { /* TODO */ },
+      AddCarryReg8(r) => { /* TODO */ },
+      AddImm8(n) => { /* TODO */ },
+      AddCarryImm8(n) => { /* TODO */ },
+      IncReg8(r) => { /* TODO */ },
+      IncReg16(r) => { /* TODO */ },
+      SubReg8(r) => { /* TODO */ },
+      SubCarryReg8(r) => { /* TODO */ },
+      SubImm8(n) => { /* TODO */ },
+      SubCarryImm8(n) => { /* TODO */ },
+      Compare(r) => { /* TODO */ },
+      CompareImm8(n) => { /* TODO */ },
+      DecReg8(r) => { /* TODO */ },
+      DecReg16(r) => { /* TODO */ },
+      AndReg8(r) => { /* TODO */ },
+      AndImm8(n) => { /* TODO */ },
+      XorReg8(r) => { /* TODO */ },
+      XorImm8(n) => { /* TODO */ },
+      OrReg8(r) => { /* TODO */ },
+      OrImm8(n) => { /* TODO */ },
+
+      LoadReg8(p, q) => { /* TODO */ },
+      LoadImm8(r, n) => { /* TODO */ },
+      LoadImm16(r, n) => { /* TODO */ },
+      WriteA(r, f) => { /* TODO */ },
+      WriteAImm16(n) => { /* TODO */ },
+      ReadA(r, f) => { /* TODO */ },
+      ReadAImm16(n) => { /* TODO */ },
+      WriteMemSP(n) => { /* TODO */ },
+      HiLoad(n) => { /* TODO */ },
+      HiLoadReg() => { /* TODO */ },
+      HiWrite(n) => { /* TODO */ },
+      HiWriteReg() => { /* TODO */ },
+
+      AddHL(r) => { /* TODO */ },
+      LoadSPOffset(i) => { /* TODO */ },
+      SwapSPHL() => { /* TODO */ },
+
+      Pop(r) => { /* TODO */ },
+      Push(r) => { /* TODO */ },
+      AddSP(i) => { /* TODO */ },
+
+      Rlca() => { /* TODO */ },
+      Rla() => { /* TODO */ },
+      Rrca() => { /* TODO */ },
+      Rra() => { /* TODO */ },
+      Rlc(r) => { /* TODO */ },
+      Rrc(r) => { /* TODO */ },
+      Rl(r) => { /* TODO */ },
+      Rr(r) => { /* TODO */ },
+      Sla(r) => { /* TODO */ },
+      Sra(r) => { /* TODO */ },
+      Swap(r) => { /* TODO */ },
+      Srl(r) => { /* TODO */ },
+      TestBit(n, r) => { /* TODO */ },
+      SetBit(n, r, v) => { /* TODO */ },
+
+      Complement() => { /* TODO */ },
+      ComplementCarry() => { /* TODO */ },
+
+      Daa() => { /* TODO */ },
+      SetCarryFlag() => { /* TODO */ },
+
+      Restart(n) => { /* TODO */ },
+
+      UnknownOpcode() => {
+        panic!("Executed unknown opcode at 0x{:X}", self.regs.pc);
+      },
+    }
+    if !jumped {
+      self.regs.pc = self.regs.pc.wrapping_add(1);
+    }
+    self.duration(instr, jumped)
+  }
 
 }
 
@@ -526,6 +665,58 @@ impl CPU {
 #[cfg(test)]
 mod tests {
   use super::*;
+
+  // TODO `test` opcode decoding and size/duration
+
+  #[test]
+  fn decode() {
+    let mut cpu = CPU::new();
+    cpu.regs.pc = 0;
+    for opcode in 0..256 {
+      cpu.mem.write8(cpu.regs.pc, opcode as u8);
+      cpu.regs.pc += 1;
+    }
+    cpu.regs.pc = 0;
+    for opcode in 0..256 {
+      let instr = cpu.decode_next();
+      let dur = cpu.duration(instr, true);
+      let dur2 = cpu.duration(instr, false);
+      let size = instr.size();
+      cpu.regs.pc += 1;
+      if dur == dur2 {
+        println!("0x{:X} -> {:?} {:?} bytes {:?} cycles", opcode, instr, size, dur);
+      } else {
+        println!("0x{:X} -> {:?} {:?} bytes {:?}/{:?} cycles", opcode, instr, size, dur, dur2);
+      }
+      if opcode & 0x0F == 0x0F {
+        println!("-------");
+      }
+    }
+    // 0xCB codes
+    cpu.regs.pc = 0;
+    for opcode in 0..256 {
+      cpu.mem.write8(cpu.regs.pc, 0xCB as u8);
+      cpu.regs.pc += 1;
+      cpu.mem.write8(cpu.regs.pc, opcode as u8);
+      cpu.regs.pc += 1;
+    }
+    cpu.regs.pc = 0;
+    for opcode in 0..256 {
+      let instr = cpu.decode_next();
+      let dur = cpu.duration(instr, true);
+      let dur2 = cpu.duration(instr, false);
+      let size = instr.size();
+      cpu.regs.pc += 2;
+      if dur == dur2 {
+        println!("0x{:X} -> {:?} {:?} bytes {:?} cycles", opcode, instr, size, dur);
+      } else {
+        println!("0x{:X} -> {:?} {:?} bytes {:?}/{:?} cycles", opcode, instr, size, dur, dur2);
+      }
+      if opcode & 0x0F == 0x0F {
+        println!("-------");
+      }
+    }
+  }
 
   #[test]
   fn nop() {
