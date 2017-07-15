@@ -173,13 +173,25 @@ impl Instruction {
 //const CLOCK_FREQ_PER_SEC: u32 = 4194304;
 
 fn concat_u8(h: W<u8>, l: W<u8>) -> W<u16> {
-  W(((h.0 as u16) << 8) | (l.0 as u16))
+  (extend_u8(h) << 8) | extend_u8(l)
 }
 
 fn break_u16(val: W<u16>) -> (W<u8>, W<u8>) {
   let hi = (val.0 & (0xFF << 8)) >> 8;
   let lo = val.0 & 0xFF;
   (W(hi as u8), W(lo as u8))
+}
+
+fn signed_add(a: W<u16>, b: W<i8>) -> W<u16> {
+  if b < W(0) {
+    a - W(b.0.abs() as u16)
+  } else {
+    a + W(b.0 as u16)
+  }
+}
+
+fn extend_u8(n: W<u8>) -> W<u16> {
+  W(n.0 as u16)
 }
 
 impl CPU {
@@ -564,27 +576,58 @@ impl CPU {
       DisableInterrupts() => { /* TODO */ },
       EnableInterrupts() => { /* TODO */ },
 
-      Jr(i) => { /* TODO */
-        let d = W(i.0.abs() as u16);
-        if i < W(0) {
-          self.regs.pc -= d;
-        } else {
-          self.regs.pc += d;
-        }
+      Jr(i) => {
+        self.regs.pc = signed_add(self.regs.pc, i);
         jumped = true;
       },
-      JrFlag(i, f, v) => { /* TODO */ },
-      Jp(n) => { /* TODO */
+      JrFlag(i, f, v) => {
+        if self.get_flag(f) == v {
+          self.regs.pc = signed_add(self.regs.pc, i);
+          jumped = true;
+        }
+      },
+      Jp(n) => {
         self.regs.pc = n;
         jumped = true;
       },
-      JpHL() => { /* TODO */ },
-      JpFlag(n, f, v) => { /* TODO */ },
-      Call(a) => { /* TODO */ },
-      CallFlag(a, f, v) => { /* TODO */ },
-      Ret() => { /* TODO */ },
-      RetInterrupt() => { /* TODO */ },
-      RetFlag(f, v) => { /* TODO */ },
+      JpHL() => {
+        self.regs.pc = self.get_reg16(Reg16::HL);
+        jumped = true;
+      },
+      JpFlag(n, f, v) => {
+        if self.get_flag(f) == v {
+          self.regs.pc = n;
+          jumped = true;
+        }
+      },
+      Call(a) => {
+        let val = self.regs.pc;
+        self.push(val);
+        self.regs.pc = a;
+        jumped = true;
+      },
+      CallFlag(a, f, v) => {
+        if self.get_flag(f) == v {
+          self.run(Call(a));
+          jumped = true;
+        }
+      },
+      Ret() => {
+        let val = self.pop();
+        self.regs.pc = val;
+        jumped = true;
+      },
+      RetFlag(f, v) => {
+        if self.get_flag(f) == v {
+          self.run(Ret());
+          jumped = true;
+        }
+      },
+      RetInterrupt() => {
+        self.run(Ret());
+        self.run(EnableInterrupts());
+        jumped = true;
+      },
 
       AddReg8(r) => { /* TODO */ },
       AddCarryReg8(r) => { /* TODO */ },
@@ -620,13 +663,33 @@ impl CPU {
       HiWrite(n) => { /* TODO */ },
       HiWriteReg() => { /* TODO */ },
 
-      AddHL(r) => { /* TODO */ },
-      LoadSPOffset(i) => { /* TODO */ },
-      SwapSPHL() => { /* TODO */ },
+      AddHL(r) => {
+        let val = self.get_reg16(Reg16::HL) + self.get_reg16(r);
+        self.set_reg16(Reg16::HL, val);
+        // TODO update flags
+      },
+      LoadSPOffset(i) => {
+        let pos = signed_add(self.regs.sp, i);
+        let val = self.read16(pos);
+        self.set_reg16(Reg16::HL, val);
+        // TODO update flags
+      },
+      SwapSPHL() => {
+        self.regs.sp = self.get_reg16(Reg16::HL);
+      },
 
-      Pop(r) => { /* TODO */ },
-      Push(r) => { /* TODO */ },
-      AddSP(i) => { /* TODO */ },
+      Pop(r) => {
+        let val = self.pop();
+        self.set_reg16(r, val);
+      },
+      Push(r) => {
+        let val = self.get_reg16(r);
+        self.push(val);
+      },
+      AddSP(i) => {
+        self.regs.sp = signed_add(self.regs.pc, i);
+        // TODO update flags
+      },
 
       Rlca() => { /* TODO */ },
       Rla() => { /* TODO */ },
@@ -638,10 +701,28 @@ impl CPU {
       Rr(r) => { /* TODO */ },
       Sla(r) => { /* TODO */ },
       Sra(r) => { /* TODO */ },
-      Swap(r) => { /* TODO */ },
       Srl(r) => { /* TODO */ },
-      TestBit(n, r) => { /* TODO */ },
-      SetBit(n, r, v) => { /* TODO */ },
+      Swap(r) => { /* TODO */ },
+      TestBit(n, r) => {
+        assert!(n <= 7);
+        let off = W(1 << n);
+        let mut val = self.get_reg8(r);
+        let bit = (val & off) == W(0);
+        self.set_flag(Flag::Zero, bit);
+        self.set_flag(Flag::H, 1);
+        self.set_flag(Flag::N, 0);
+      },
+      SetBit(n, r, v) => {
+        assert!(n <= 7);
+        let off = W(1 << n);
+        let mut val = self.get_reg8(r);
+        if v {
+          val |= off;
+        } else {
+          val &= off;
+        }
+        self.set_reg8(r, val);
+      },
 
       Complement() => { /* TODO */ },
       ComplementCarry() => { /* TODO */ },
@@ -649,7 +730,11 @@ impl CPU {
       Daa() => { /* TODO */ },
       SetCarryFlag() => { /* TODO */ },
 
-      Restart(n) => { /* TODO */ },
+      Restart(n) => {
+        let val = self.regs.pc;
+        self.push(val);
+        self.set_reg16(Reg16::PC, extend_u8(n));
+      },
 
       UnknownOpcode() => {
         panic!("Executed unknown opcode at 0x{:X}", self.regs.pc);
