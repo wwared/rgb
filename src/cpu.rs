@@ -1,19 +1,21 @@
+use std::num::Wrapping as W;
+
 use mem;
 use mem::MemoryBlock;
 use mem::RAM;
 use mem::ROM;
 
 pub struct Registers {
-  a: u8,
-  f: u8,
-  b: u8,
-  c: u8,
-  d: u8,
-  e: u8,
-  h: u8,
-  l: u8,
-  sp: u16,
-  pc: u16,
+  a: W<u8>,
+  f: W<u8>,
+  b: W<u8>,
+  c: W<u8>,
+  d: W<u8>,
+  e: W<u8>,
+  h: W<u8>,
+  l: W<u8>,
+  sp: W<u16>,
+  pc: W<u16>,
 }
 
 pub struct CPU {
@@ -69,58 +71,58 @@ pub enum Instruction {
   DisableInterrupts(),
   EnableInterrupts(),
 
-  Jr(i8),
-  JrFlag(i8, Flag, bool),
-  Jp(u16),
+  Jr(W<i8>),
+  JrFlag(W<i8>, Flag, bool),
+  Jp(W<u16>),
   JpHL(),
-  JpFlag(u16, Flag, bool),
-  Call(u16),
-  CallFlag(u16, Flag, bool),
+  JpFlag(W<u16>, Flag, bool),
+  Call(W<u16>),
+  CallFlag(W<u16>, Flag, bool),
   Ret(),
   RetInterrupt(),
   RetFlag(Flag, bool),
 
   AddReg8(Reg8),
   AddCarryReg8(Reg8),
-  AddImm8(u8),
-  AddCarryImm8(u8),
+  AddImm8(W<u8>),
+  AddCarryImm8(W<u8>),
   IncReg8(Reg8),
   IncReg16(Reg16),
   SubReg8(Reg8),
   SubCarryReg8(Reg8),
-  SubImm8(u8),
-  SubCarryImm8(u8),
+  SubImm8(W<u8>),
+  SubCarryImm8(W<u8>),
   Compare(Reg8),
-  CompareImm8(u8),
+  CompareImm8(W<u8>),
   DecReg8(Reg8),
   DecReg16(Reg16),
   AndReg8(Reg8),
-  AndImm8(u8),
+  AndImm8(W<u8>),
   XorReg8(Reg8),
-  XorImm8(u8),
+  XorImm8(W<u8>),
   OrReg8(Reg8),
-  OrImm8(u8),
+  OrImm8(W<u8>),
 
   LoadReg8(Reg8, Reg8),
-  LoadImm8(Reg8, u8),
-  LoadImm16(Reg16, u16),
+  LoadImm8(Reg8, W<u8>),
+  LoadImm16(Reg16, W<u16>),
   WriteA(Reg16, InstrFlag),
-  WriteAImm16(u16),
+  WriteAImm16(W<u16>),
   ReadA(Reg16, InstrFlag),
-  ReadAImm16(u16),
-  WriteMemSP(u16),
-  HiLoad(u8),
+  ReadAImm16(W<u16>),
+  WriteMemSP(W<u16>),
+  HiLoad(W<u8>),
   HiLoadReg(),
-  HiWrite(u8),
+  HiWrite(W<u8>),
   HiWriteReg(),
 
   AddHL(Reg16),
-  LoadSPOffset(i8),
+  LoadSPOffset(W<i8>),
   SwapSPHL(),
 
   Pop(Reg16),
   Push(Reg16),
-  AddSP(i8),
+  AddSP(W<i8>),
 
   Rlca(),
   Rla(),
@@ -143,7 +145,7 @@ pub enum Instruction {
   Daa(),
   SetCarryFlag(),
 
-  Restart(u8),
+  Restart(W<u8>),
 
   UnknownOpcode(),
 }
@@ -170,14 +172,14 @@ impl Instruction {
 // TODO: unused
 //const CLOCK_FREQ_PER_SEC: u32 = 4194304;
 
-fn concat_u8(h: u8, l: u8) -> u16 {
-  ((h as u16) << 8) | (l as u16)
+fn concat_u8(h: W<u8>, l: W<u8>) -> W<u16> {
+  W(((h.0 as u16) << 8) | (l.0 as u16))
 }
 
-fn break_u16(val: u16) -> (u8, u8) {
-  let hi = (val & (0xFF << 8)) >> 8;
-  let lo = val & 0xFF;
-  (hi as u8, lo as u8)
+fn break_u16(val: W<u16>) -> (W<u8>, W<u8>) {
+  let hi = (val.0 & (0xFF << 8)) >> 8;
+  let lo = val.0 & 0xFF;
+  (W(hi as u8), W(lo as u8))
 }
 
 impl CPU {
@@ -186,23 +188,23 @@ impl CPU {
     mem.resize(mem::MEM_TOP, 0);
     CPU {
       regs: Registers {
-        a: 0,
-        f: 0,
-        b: 0,
-        c: 0,
-        d: 0,
-        e: 0,
-        h: 0,
-        l: 0,
-        sp: 0xFFFE,
-        pc: 0x100,
+        a: W(0),
+        f: W(0),
+        b: W(0),
+        c: W(0),
+        d: W(0),
+        e: W(0),
+        h: W(0),
+        l: W(0),
+        sp: W(0xFFFE),
+        pc: W(0x100),
       },
 
       mem: RAM { addr: 0, v: mem },
     }
   }
 
-  fn get_reg8(&self, r: Reg8) -> u8 {
+  fn get_reg8(&self, r: Reg8) -> W<u8> {
     match r {
       Reg8::A => self.regs.a,
       Reg8::B => self.regs.b,
@@ -216,7 +218,7 @@ impl CPU {
     }
   }
 
-  fn set_reg8(&mut self, r: Reg8, val: u8) {
+  fn set_reg8(&mut self, r: Reg8, val: W<u8>) {
     match r {
       Reg8::A => self.regs.a = val,
       Reg8::B => self.regs.b = val,
@@ -233,7 +235,7 @@ impl CPU {
     }
   }
 
-  fn get_reg16(&self, r: Reg16) -> u16 {
+  fn get_reg16(&self, r: Reg16) -> W<u16> {
     match r {
       Reg16::AF => concat_u8(self.regs.a, self.regs.f),
       Reg16::BC => concat_u8(self.regs.b, self.regs.c),
@@ -244,7 +246,7 @@ impl CPU {
     }
   }
 
-  fn set_reg16(&mut self, r: Reg16, val: u16) {
+  fn set_reg16(&mut self, r: Reg16, val: W<u16>) {
     match r {
       Reg16::AF => {
         let (a, f) = break_u16(val);
@@ -268,46 +270,46 @@ impl CPU {
   }
 
   // TODO: implement memory mapping
-  fn read8(&self, pos: u16) -> u8 {
-    self.mem.read8(pos)
+  fn read8(&self, pos: W<u16>) -> W<u8> {
+    W(self.mem.read8(pos.0))
   }
 
-  fn write8(&mut self, pos: u16, val: u8) {
-    self.mem.write8(pos, val);
+  fn write8(&mut self, pos: W<u16>, val: W<u8>) {
+    self.mem.write8(pos.0, val.0);
   }
 
-  fn read16(&self, pos: u16) -> u16 {
+  fn read16(&self, pos: W<u16>) -> W<u16> {
     let h = self.read8(pos);
-    let l = self.read8(pos.wrapping_add(1));
+    let l = self.read8(pos + W(1));
     concat_u8(h, l)
   }
 
-  fn write16(&mut self, pos: u16, val: u16) {
+  fn write16(&mut self, pos: W<u16>, val: W<u16>) {
     let (h, l) = break_u16(val);
     self.write8(pos, h);
-    self.write8(pos.wrapping_add(1), l);
+    self.write8(pos + W(1), l);
   }
 
   // not sure if i'll need these two fns
   fn get_flag(&self, flag: Flag) -> bool {
     let f = flag as u8;
-    f & (self.regs.f) != 0
+    f & (self.regs.f.0) != 0
   }
 
   fn set_flag(&mut self, flag: Flag, value: bool) {
     let f = flag as u8;
-    self.regs.f = if value { self.regs.f | f } else { self.regs.f & !f };
+    self.regs.f.0 = if value { self.regs.f.0 | f } else { self.regs.f.0 & !f };
   }
 
-  fn push(&mut self, val: u16) {
-    self.regs.sp -= 2;
+  fn push(&mut self, val: W<u16>) {
+    self.regs.sp -= W(2);
     let p = self.regs.sp;
     self.write16(p, val);
   }
 
-  fn pop(&mut self) -> u16 {
+  fn pop(&mut self) -> W<u16> {
     let val = self.read16(self.regs.sp);
-    self.regs.sp += 2;
+    self.regs.sp += W(2);
     val
   }
 
@@ -316,20 +318,20 @@ impl CPU {
     let cycles = self.run(next);
   }
 
-  fn opcode_u8(&self) -> u8 {
-    self.read8(self.regs.pc+1)
+  fn opcode_u8(&self) -> W<u8> {
+    self.read8(self.regs.pc + W(1))
   }
 
-  fn opcode_i8(&self) -> i8 {
-    self.opcode_u8() as i8
+  fn opcode_i8(&self) -> W<i8> {
+    W(self.opcode_u8().0 as i8)
   }
 
-  fn opcode_u16(&self) -> u16 {
-    self.read16(self.regs.pc+1)
+  fn opcode_u16(&self) -> W<u16> {
+    self.read16(self.regs.pc + W(1))
   }
 
   pub fn decode_next(&mut self) -> Instruction {
-    let opcode = self.read8(self.regs.pc);
+    let opcode = self.read8(self.regs.pc).0;
 
     let reg8: [Reg8; 8] = [Reg8::B, Reg8::C, Reg8::D, Reg8::E, Reg8::H, Reg8::L, Reg8::MemHL, Reg8::A];
     let reg16: [Reg16; 4] = [Reg16::BC, Reg16::DE, Reg16::HL, Reg16::SP];
@@ -452,17 +454,17 @@ impl CPU {
       0x2F => Complement(),
       0x3F => ComplementCarry(),
 
-      0xC7 => Restart(0x00),
-      0xD7 => Restart(0x10),
-      0xE7 => Restart(0x20),
-      0xF7 => Restart(0x30),
-      0xCF => Restart(0x08),
-      0xDF => Restart(0x18),
-      0xEF => Restart(0x28),
-      0xFF => Restart(0x38),
+      0xC7 => Restart(W(0x00)),
+      0xD7 => Restart(W(0x10)),
+      0xE7 => Restart(W(0x20)),
+      0xF7 => Restart(W(0x30)),
+      0xCF => Restart(W(0x08)),
+      0xDF => Restart(W(0x18)),
+      0xEF => Restart(W(0x28)),
+      0xFF => Restart(W(0x38)),
 
       0xCB => {
-        let opcode2 = self.opcode_u8();
+        let opcode2 = self.opcode_u8().0;
         match opcode2 {
           0x00 ... 0x07 => Rlc(reg8[(opcode2 & 0x0f) as usize]),
           0x08 ... 0x0F => Rrc(reg8[(opcode2 & 0x0f - 8) as usize]),
@@ -563,11 +565,11 @@ impl CPU {
       EnableInterrupts() => { /* TODO */ },
 
       Jr(i) => { /* TODO */
-        let d = i.abs() as u16;
-        if i < 0 {
-          self.regs.pc = self.regs.pc.wrapping_sub(d);
+        let d = W(i.0.abs() as u16);
+        if i < W(0) {
+          self.regs.pc -= d;
         } else {
-          self.regs.pc = self.regs.pc.wrapping_add(d);
+          self.regs.pc += d;
         }
         jumped = true;
       },
@@ -654,7 +656,7 @@ impl CPU {
       },
     }
     if !jumped {
-      self.regs.pc = self.regs.pc.wrapping_add(1);
+      self.regs.pc += W(1);
     }
     self.duration(instr, jumped)
   }
