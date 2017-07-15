@@ -678,10 +678,26 @@ impl CPU {
         let val = self.regs.sp;
         self.write16(n, val);
       },
-      HiLoad(n) => { /* TODO */ },
-      HiLoadReg() => { /* TODO */ },
-      HiWrite(n) => { /* TODO */ },
-      HiWriteReg() => { /* TODO */ },
+      HiLoad(n) => {
+        let pos = W(0xFF00) + extend_u8(n);
+        let val = self.read8(pos);
+        self.set_reg8(Reg8::A, val);
+      },
+      HiWrite(n) => {
+        let pos = W(0xFF00) + extend_u8(n);
+        let val = self.get_reg8(Reg8::A);
+        self.write8(pos, val);
+      },
+      HiLoadReg() => {
+        let pos = W(0xFF00) + extend_u8(self.get_reg8(Reg8::C));
+        let val = self.read8(pos);
+        self.set_reg8(Reg8::A, val);
+      },
+      HiWriteReg() => {
+        let pos = W(0xFF00) + extend_u8(self.get_reg8(Reg8::C));
+        let val = self.get_reg8(Reg8::A);
+        self.write8(pos, val);
+      },
 
       AddHL(r) => {
         let val = self.get_reg16(Reg16::HL) + self.get_reg16(r);
