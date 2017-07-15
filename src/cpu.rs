@@ -194,6 +194,11 @@ fn extend_u8(n: W<u8>) -> W<u16> {
   W(n.0 as u16)
 }
 
+fn bit(x: W<u8>, n: u8) -> bool {
+  assert!(n <= 7);
+  (x.0 & (1 << n)) == 0
+}
+
 impl CPU {
   pub fn new() -> CPU {
     let mut mem = Vec::with_capacity(mem::MEM_TOP);
@@ -239,7 +244,7 @@ impl CPU {
       Reg8::E => self.regs.e = val,
       Reg8::H => self.regs.h = val,
       Reg8::L => self.regs.l = val,
-      Reg8::F => self.regs.f = val,
+      Reg8::F => self.regs.f = W(val.0 & 0b11110000), // lower bits are always 0
       Reg8::MemHL => {
         let pos = self.get_reg16(Reg16::HL);
         self.write8(pos, val);
@@ -262,7 +267,7 @@ impl CPU {
     match r {
       Reg16::AF => {
         let (a, f) = break_u16(val);
-        self.regs.a = a; self.regs.f = f;
+        self.regs.a = a; self.regs.f = W(f.0 & 0b11110000);
       },
       Reg16::BC => {
         let (b, c) = break_u16(val);
@@ -311,6 +316,11 @@ impl CPU {
   fn set_flag(&mut self, flag: Flag, value: bool) {
     let f = flag as u8;
     self.regs.f.0 = if value { self.regs.f.0 | f } else { self.regs.f.0 & !f };
+    self.regs.f.0 &= 0b11110000;
+  }
+
+  fn zero_flags(&mut self) {
+    self.regs.f = W(0);
   }
 
   fn push(&mut self, val: W<u16>) {
@@ -650,14 +660,24 @@ impl CPU {
       OrReg8(r) => { /* TODO */ },
       OrImm8(n) => { /* TODO */ },
 
-      LoadReg8(p, q) => { /* TODO */ },
-      LoadImm8(r, n) => { /* TODO */ },
-      LoadImm16(r, n) => { /* TODO */ },
+      LoadReg8(p, q) => {
+        let val = self.get_reg8(q);
+        self.set_reg8(p, val);
+      },
+      LoadImm8(r, n) => {
+        self.set_reg8(r, n);
+      },
+      LoadImm16(r, n) => {
+        self.set_reg16(r, n);
+      },
       WriteA(r, f) => { /* TODO */ },
       WriteAImm16(n) => { /* TODO */ },
       ReadA(r, f) => { /* TODO */ },
       ReadAImm16(n) => { /* TODO */ },
-      WriteMemSP(n) => { /* TODO */ },
+      WriteMemSP(n) => {
+        let val = self.regs.sp;
+        self.write16(n, val);
+      },
       HiLoad(n) => { /* TODO */ },
       HiLoadReg() => { /* TODO */ },
       HiWrite(n) => { /* TODO */ },
@@ -666,6 +686,7 @@ impl CPU {
       AddHL(r) => {
         let val = self.get_reg16(Reg16::HL) + self.get_reg16(r);
         self.set_reg16(Reg16::HL, val);
+        self.set_flag(Flag::N, false);
         // TODO update flags
       },
       LoadSPOffset(i) => {
@@ -691,10 +712,32 @@ impl CPU {
         // TODO update flags
       },
 
-      Rlca() => { /* TODO */ },
-      Rla() => { /* TODO */ },
-      Rrca() => { /* TODO */ },
-      Rra() => { /* TODO */ },
+      Rlca() => {
+        self.zero_flags();
+        let val = bit(self.regs.a, 7);
+        self.set_flag(Flag::Carry, val);
+        self.regs.a = W(self.regs.a.0.rotate_left(1));
+      },
+      Rrca() => {
+        self.zero_flags();
+        let val = bit(self.regs.a, 0);
+        self.set_flag(Flag::Carry, val);
+        self.regs.a = W(self.regs.a.0.rotate_right(1));
+      },
+      Rla() => {
+        let val = self.get_flag(Flag::Carry);
+        let carry = bit(self.regs.a, 7);
+        self.zero_flags();
+        self.set_flag(Flag::Carry, carry);
+        self.regs.a = W(self.regs.a.0 << 1 | (if carry { 1 } else { 0 }));
+      },
+      Rra() => {
+        let val = self.get_flag(Flag::Carry);
+        let carry = bit(self.regs.a, 0);
+        self.zero_flags();
+        self.set_flag(Flag::Carry, carry);
+        self.regs.a = W(self.regs.a.0 >> 1 | (if carry { 1 << 7 } else { 0 }));
+      },
       Rlc(r) => { /* TODO */ },
       Rrc(r) => { /* TODO */ },
       Rl(r) => { /* TODO */ },
@@ -709,8 +752,8 @@ impl CPU {
         let mut val = self.get_reg8(r);
         let bit = (val & off) == W(0);
         self.set_flag(Flag::Zero, bit);
-        self.set_flag(Flag::H, 1);
-        self.set_flag(Flag::N, 0);
+        self.set_flag(Flag::H, true);
+        self.set_flag(Flag::N, false);
       },
       SetBit(n, r, v) => {
         assert!(n <= 7);
